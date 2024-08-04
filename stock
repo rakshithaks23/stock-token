@@ -1,0 +1,89 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "hardhat/console.sol";
+
+contract StockToken is ERC20, Ownable, ERC20Burnable {
+    // Event for logging messages
+    event LogMessage(string message);
+
+    // Structure to represent a stock's price and quantity
+    struct Stock {
+        uint256 price; // Price of the stock
+        uint256 num;   // Available quantity of the stock
+    }
+
+    // Mappings to store stock details and user holdings
+    mapping(string => Stock) public stocks; // Maps stock names to their details
+    mapping(address => mapping(string => uint256)) public userStocks; // Maps user addresses to their stock holdings
+    mapping(address => string[]) public userStockList; // Lists the stock names each user owns
+
+    // Constructor to initialize the token
+    constructor() ERC20("STOCK", "STK") Ownable() {}
+
+    // Function to mint new tokens, callable only by the owner
+    function mintTokens(address target, uint256 volume) public onlyOwner {
+        _mint(target, volume);
+    }
+
+    // Function for users to burn tokens
+    function burnTokens(uint256 volume) public {
+        require(balanceOf(msg.sender) >= volume, "INSUFFICIENT FUNDS!!");
+        _burn(msg.sender, volume);
+        emit LogMessage("Burned volume");
+    }
+
+    // Function to transfer tokens to another address
+    function transferTokens(address recipient, uint256 volume) external {
+        require(balanceOf(msg.sender) >= volume, "INSUFFICIENT FUNDS!!");
+        _transfer(msg.sender, recipient, volume);
+    }
+
+    // Function to set stock prices and quantities, callable only by the owner
+    function setStockPricesAndQuantities(
+        string memory stockName,
+        uint256 price,
+        uint256 num
+    ) external onlyOwner {
+        require(bytes(stockName).length > 0, "Stock name cannot be empty");
+        require(price > 0, "Price must be greater than zero");
+        require(num >= 0, "Num must be greater than or equal to zero");
+
+        stocks[stockName] = Stock(price, num);
+        emit LogMessage("Set stock prices and quantities");
+    }
+
+    // Function for users to redeem stocks by burning tokens
+    function redeemStock(
+        string memory stockName,
+        uint256 num
+    ) external payable {
+        require(bytes(stockName).length > 0, "Stock name cannot be empty");
+        require(num > 0, "Num must be greater than zero");
+        
+        Stock storage stock = stocks[stockName];
+        require(stock.price > 0, "Stock does not exist");
+        require(stock.num >= num, "Insufficient stock num");
+        require(balanceOf(msg.sender) >= stock.price * num, "INSUFFICIENT FUNDS!!");
+
+        // Burn the equivalent amount of tokens for the stock
+        _burn(msg.sender, stock.price * num);
+        userStocks[msg.sender][stockName] += num;
+
+        // Add stock name to user stock list if it's their first holding
+        if (userStocks[msg.sender][stockName] == num) {
+            userStockList[msg.sender].push(stockName);
+        }
+        stock.num -= num;
+
+        emit LogMessage("Redeemed stock");
+    }
+
+    // Function to show the user's stock portfolio
+    function showPortfolio() external view returns (string[] memory) {
+        return userStockList[msg.sender];
+    }
+}
